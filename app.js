@@ -8,24 +8,24 @@ const binance = require('node-binance-api');
 const USDT_SYMBOL = 'USDT';
 const BTC_SYMBOL = 'BTC';
 const MIN_PROFIT = 1;
-const INTERVAL_TIMER = 10000;
+const INTERVAL_TIMER = 5000;
 
-const BASE_SYMBOLS = [USDT_SYMBOL];
+const BASE_SYMBOLS = [USDT_SYMBOL, BTC_SYMBOL];
 var tradingDataList = [];
 var db = {};
 
+console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', 'Program started ...');
 binance.prices((ticker) => {
 	var allPairs = _.keys(ticker);
 	BASE_SYMBOLS.forEach((symbol) => {
 			tradingDataList.push(initTradingData(symbol, allPairs));
-			console.log(db);
 	});
-
+	console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', 'Trading data initialized ...');
 	setInterval(() => {
-		console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', 'LOOP START');
-		binance.prices((ticker) => {
+		console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', 'Looking for trades ...');
+		binance.bookTickers((tickers) => {
 			tradingDataList.forEach((tradeData) => {
-				lookForTrade(tradeData, ticker);
+				lookForTrade(tradeData, tickers);
 			});
 		});
 	}, INTERVAL_TIMER);
@@ -52,7 +52,8 @@ var initTradingData = (baseSymbol, allPairs) => {
 	return { baseSymbol: baseSymbol, allTradeSymbols: allSymbols, baseSymbolPairs: baseSymbolPairs, tradePairs: tradePairs };
 };
 
-var lookForTrade = (tradeData, prices) => {
+var lookForTrade = (tradeData, tickers) => {
+	var time = Date.now();
 	tradeData.baseSymbolPairs.forEach((pair) => {
 		var symbol = pair.replace(tradeData.baseSymbol, '');
 		var symbolPairs = _.filter(tradeData.tradePairs, (tradePair) => { return tradePair.indexOf(symbol) !== -1 && tradePair.indexOf(USDT_SYMBOL) === -1; });
@@ -64,17 +65,18 @@ var lookForTrade = (tradeData, prices) => {
 
 			var currentSymbolQuantity, finalBaseSymbolQuantity;
 			path.forEach((pairInPath, index) => {
-				var price = prices[pairInPath];
+				var ticker = tickers[pairInPath];
 				if(index === 0) {
-					currentSymbolQuantity = 1 / price;
+					currentSymbolQuantity = 1 / ticker.ask;
 				} else if(index === path.length - 1) {
-					finalBaseSymbolQuantity = currentSymbolQuantity * price;
+					finalBaseSymbolQuantity = currentSymbolQuantity * ticker.bid;
 				} else {
-					currentSymbolQuantity = (pairInPath.indexOf(symbol) === 0) ? (currentSymbolQuantity * price) : (currentSymbolQuantity / price);
+					currentSymbolQuantity = (pairInPath.indexOf(symbol) === 0) ? (currentSymbolQuantity * ticker.bid) : (currentSymbolQuantity / ticker.ask);
 				}
 			});
 			var profit = (finalBaseSymbolQuantity - 1) * 100;
 			if(profit >= MIN_PROFIT) {
+				db[tradeData.baseSymbol].insert({ path: path, profit: profit, time: time });
 				console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', path[0], '-', path[1], '-', path[2], profit, '%');
 			}
 		});
