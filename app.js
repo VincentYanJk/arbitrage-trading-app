@@ -1,9 +1,9 @@
 var moment = require('moment');
 var _ = require('lodash');
 var fs = require('fs');
+var Datastore = require('nedb');
 
 const binance = require('node-binance-api');
-// const MongoClient = require('mongodb').MongoClient;
 
 const USDT_SYMBOL = 'USDT';
 const BTC_SYMBOL = 'BTC';
@@ -12,11 +12,13 @@ const INTERVAL_TIMER = 10000;
 
 const BASE_SYMBOLS = [USDT_SYMBOL];
 var tradingDataList = [];
+var db = {};
 
 binance.prices((ticker) => {
 	var allPairs = _.keys(ticker);
 	BASE_SYMBOLS.forEach((symbol) => {
 			tradingDataList.push(initTradingData(symbol, allPairs));
+			console.log(db);
 	});
 
 	setInterval(() => {
@@ -46,7 +48,7 @@ var initTradingData = (baseSymbol, allPairs) => {
 			}
 		}
 	});
-
+	db[baseSymbol] = new Datastore({ filename: './db/' + baseSymbol.toLowerCase() + '.db', autoload: true });
 	return { baseSymbol: baseSymbol, allTradeSymbols: allSymbols, baseSymbolPairs: baseSymbolPairs, tradePairs: tradePairs };
 };
 
