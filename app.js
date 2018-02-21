@@ -1,16 +1,18 @@
 var moment = require('moment');
 var _ = require('lodash');
-var fs = require('fs');
 var Datastore = require('nedb');
 
 const binance = require('node-binance-api');
 
 const USDT_SYMBOL = 'USDT';
 const BTC_SYMBOL = 'BTC';
-const MIN_PROFIT = 1;
+const ETH_SYMBOL = 'ETH';
+const BNB_SYMBOL = 'BNB';
+
+const MIN_PROFIT = 0;
 const INTERVAL_TIMER = 5000;
 
-const BASE_SYMBOLS = [USDT_SYMBOL, BTC_SYMBOL];
+const BASE_SYMBOLS = [BTC_SYMBOL];
 var tradingDataList = [];
 var db = {};
 
@@ -32,19 +34,44 @@ binance.prices((ticker) => {
 });
 
 var initTradingData = (baseSymbol, allPairs) => {
-	var baseSymbolPairs = _.filter(allPairs, (pair) => { return pair.indexOf(baseSymbol) !== -1; });
 	var allSymbols = [];
-	baseSymbolPairs.forEach((pair) => {
-		allSymbols.push(pair.replace(baseSymbol, ''));
+	var baseSymbolPairs = _.filter(allPairs, (pair) => { return pair.startsWith(baseSymbol) || pair.endsWith(baseSymbol); });
+	baseSymbolPairs = _.map(baseSymbolPairs, (pair) => {
+		var mainSymbol, secondSymbol;
+		if(pair.endsWith(baseSymbol)) {
+			mainSymbol = baseSymbol;
+			secondSymbol = pair.replace(baseSymbol, '');
+			allSymbols.push(secondSymbol);
+		} else if(pair.startsWith(baseSymbol)) {
+			mainSymbol = pair.replace(baseSymbol, '');
+			secondSymbol = baseSymbol;
+			allSymbols.push(mainSymbol);
+		}
+		return {
+			pair: pair,
+			mainSymbol: mainSymbol,
+			secondSymbol: secondSymbol
+		}
 	});
 
 	var tradePairs = [];
 	allSymbols.forEach((symbol, index) => {
 		for(var i = index + 1; i < allSymbols.length; i++) {
 			var secondSymbol = allSymbols[i];
-			var tradePair = _.find(allPairs, (pair) => { return pair.indexOf(symbol) !== -1 && pair.indexOf(secondSymbol) !== -1; });
+			var tradePair = _.find(allPairs, (pair) => { 
+				return ((pair.startsWith(symbol) && pair.endsWith(secondSymbol)) || (pair.startsWith(secondSymbol) && pair.endsWith(symbol))) 
+								&& pair.length === (symbol.length + secondSymbol.length); 
+			});
 			if(tradePair) {
-				tradePairs.push(tradePair);
+				var mainSymbol, secondPairSymbol;
+				if(tradePair.endsWith(symbol)) {
+					mainSymbol = symbol;
+					secondPairSymbol = secondSymbol;
+				} else if(tradePair.startsWith(symbol)) {
+					mainSymbol = secondSymbol;
+					secondPairSymbol = symbol;
+				}
+				tradePairs.push({ pair: tradePair, mainSymbol: mainSymbol, secondSymbol: secondPairSymbol });
 			}
 		}
 	});
@@ -55,29 +82,37 @@ var initTradingData = (baseSymbol, allPairs) => {
 var lookForTrade = (tradeData, tickers) => {
 	var time = Date.now();
 	tradeData.baseSymbolPairs.forEach((pair) => {
-		var symbol = pair.replace(tradeData.baseSymbol, '');
-		var symbolPairs = _.filter(tradeData.tradePairs, (tradePair) => { return tradePair.indexOf(symbol) !== -1 && tradePair.indexOf(USDT_SYMBOL) === -1; });
-		
-		symbolPairs.forEach((symbolPair) => {
-			var path = [pair, symbolPair];
-			var secondSymbol = symbolPair.replace(symbol, '');
-			path.push(_.find(tradeData.baseSymbolPairs, (pair) => { return pair.indexOf(secondSymbol) !== -1; }));
+		var symbol = (tradeData.baseSymbol === pair.mainSymbol) ? pair.secondSymbol : pair.mainSymbol;
+		var symbolPairs = _.filter(tradeData.tradePairs, (tradePair) => { return tradePair.mainSymbol === symbol || tradePair.secondSymbol === symbol; });
 
-			var currentSymbolQuantity, finalBaseSymbolQuantity;
-			path.forEach((pairInPath, index) => {
-				var ticker = tickers[pairInPath];
-				if(index === 0) {
-					currentSymbolQuantity = 1 / ticker.ask;
-				} else if(index === path.length - 1) {
-					finalBaseSymbolQuantity = currentSymbolQuantity * ticker.bid;
+		symbolPairs.forEach((symbolPair) => {
+			var path = [{ pair: pair }, { pair: symbolPair }];
+			var secondSymbol = (symbol !== symbolPair.mainSymbol) ? symbolPair.mainSymbol : symbolPair.secondSymbol;
+			path.push({ pair: _.find(tradeData.baseSymbolPairs, (pair) => { return pair.mainSymbol === secondSymbol || pair.secondSymbol === secondSymbol; }) });
+
+			var quantity = 1, currentSymbol = tradeData.baseSymbol;
+			for(var i = 0; i < path.length; i++) {
+				var pairInPath = path[i];
+				var ticker = tickers[pairInPath.pair.pair];
+
+				pairInPath.bid = ticker.bid;
+				pairInPath.ask = ticker.ask;
+				
+				if(pairInPath.pair.mainSymbol === currentSymbol) {
+					quantity = quantity / ticker.ask;
+					currentSymbol = pairInPath.pair.secondSymbol;
+				} else if(pairInPath.pair.secondSymbol === currentSymbol) {
+					quantity = quantity * ticker.bid;
+					currentSymbol = pairInPath.pair.mainSymbol;
 				} else {
-					currentSymbolQuantity = (pairInPath.indexOf(symbol) === 0) ? (currentSymbolQuantity * ticker.bid) : (currentSymbolQuantity / ticker.ask);
+					quantity = 1;
+					break;
 				}
-			});
-			var profit = (finalBaseSymbolQuantity - 1) * 100;
+			};
+			var profit = (quantity - 1) * 100;
 			if(profit >= MIN_PROFIT) {
 				db[tradeData.baseSymbol].insert({ path: path, profit: profit, time: time });
-				console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', path[0], '-', path[1], '-', path[2], profit, '%');
+				console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', path[0].pair.pair, '-', path[1].pair.pair, '-', path[2].pair.pair, profit, '%');
 			}
 		});
 	});
