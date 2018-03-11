@@ -9,9 +9,13 @@
   "author": "abella",
   "license": "ISC",
   "dependencies": {
+    "build-url": "^1.0.10",
     "lodash": "^4.17.4",
     "moment": "^2.20.1",
     "nedb": "^1.8.0",
-    "node-binance-api": "^0.3.0"
+    "node-binance-api": "^0.3.0",
+    "promise": "^8.0.1",
+    "request": "^2.83.0",
+    "ws": "^4.1.0"
   }
 }
