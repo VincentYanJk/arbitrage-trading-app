@@ -3,8 +3,10 @@ var promise = require('promise');
 var url = require('url');
 var crypto = require('crypto');
 
-const API_KEY = 't1RIshuEhRW5uxbgBs8guk1YgFzQCSOAvXVt1boTMnQrlid2f6tltXWCgSM7suUr';
-const SECRET_KEY = 'YzFuFfON5k0HlMi1eLFvcvxFIb6Gnwq4xHjD9RBORJYXJZts4N98gi2806wq3UWb';
+const config = require('./config/config.js');
+
+const API_KEY = config.API_KEY;
+const SECRET_KEY = config.SECRET_KEY;
 
 // API URL
 const URL = 'https://api.binance.com';
