@@ -1,4 +1,6 @@
 node_modules/
 db/*
 !db/.gitkeep
+!db/db.js
 config/
+/.idea

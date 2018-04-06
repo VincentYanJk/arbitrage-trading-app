@@ -1,9 +1,8 @@
-var request = require('request');
-var promise = require('promise');
-var url = require('url');
-var crypto = require('crypto');
+const request = require('request');
+const url = require('url');
+const crypto = require('crypto');
 
-const config = require('./config/config.js');
+const config = require('../config/config.js');
 
 const API_KEY = config.API_KEY;
 const SECRET_KEY = config.SECRET_KEY;
@@ -21,16 +20,17 @@ const USER_DATA_STREAM_PATH = '/api/v1/userDataStream';
 // PRIVATE ENDPOINTS
 const ORDER_PATH = '/api/v3/order';
 const TEST_ORDER_PATH = '/api/v3/order/test';
+const OPEN_ORDERS_PATH = '/api/v3/openOrders';
 const ACCOUNT_INFO_PATH = '/api/v3/account';
 
-var options = {
+let options = {
 	method: 'GET',
 	url: '',
 	headers: {},
 	json: true
 };
 
-var call = (options) => {
+const call = (options) => {
 	return new Promise((resolve, reject) => {
 		request(options, (err, res, body) => {
 			if(err) {
@@ -39,7 +39,7 @@ var call = (options) => {
 				resolve(body);
 			}
 		});
-	});	
+	});
 };
 
 module.exports = {
@@ -81,9 +81,9 @@ module.exports = {
 		return call(options);				
 	},
 	accountInfo: () => {
-		var params = 'timestamp=' + Date.now();
+		let params = 'timestamp=' + Date.now();
 
-		var signature = crypto.createHmac('sha256', SECRET_KEY).update(params).digest('hex');
+		let signature = crypto.createHmac('sha256', SECRET_KEY).update(params).digest('hex');
 		params = params.concat('&signature=' + signature);
 
 		options.url = url.parse(URL + ACCOUNT_INFO_PATH + '?' + params);
@@ -92,14 +92,38 @@ module.exports = {
 		return call(options);		
 	},
 	order: (symbol, side, type, timeInForce, quantity, price) => {
-		var params = 'symbol=' + symbol + '&side=' + side + '&type=' + type + '&timeInForce=' + timeInForce  + '&quantity=' + quantity + 
-								 '&price=' + price + '&timestamp=' + Date.now();
+		let params = 'symbol=' + symbol + '&side=' + side + '&type=' + type + '&timeInForce=' + timeInForce  + '&quantity=' + quantity +
+								 '&price=' + price + '&recvWindow=' + 100000000 + '&timestamp=' + Date.now();
+
+		let signature = crypto.createHmac('sha256', SECRET_KEY).update(params).digest('hex');
+		params = params.concat('&signature=' + signature);
+
+		options.url = url.parse(URL + ORDER_PATH + '?' + params);
+		options.method = 'POST';
+		options.headers['X-MBX-APIKEY'] = API_KEY;
+		
+		return call(options);
+	},
+	cancelOrder: (symbol, orderId, origClientOrderId) => {
+		var params = 'symbol=' + symbol + '&orderId' + orderId + '&origClientOrderId' + origClientOrderId + '&timestamp=' + Date.now();
 
 		var signature = crypto.createHmac('sha256', SECRET_KEY).update(params).digest('hex');
 		params = params.concat('&signature=' + signature);
 
 		options.url = url.parse(URL + ORDER_PATH + '?' + params);
-		options.method = 'POST';
+		options.method = 'DELETE';
+		options.headers['X-MBX-APIKEY'] = API_KEY;
+		
+		return call(options);
+	},
+	getOpenOrders: (symbol) => {
+		var params = 'symbol=' + symbol + '&timestamp=' + Date.now();
+
+		var signature = crypto.createHmac('sha256', SECRET_KEY).update(params).digest('hex');
+		params = params.concat('&signature=' + signature);
+
+		options.url = url.parse(URL + ORDER_PATH + '?' + params);
+		options.method = 'GET';
 		options.headers['X-MBX-APIKEY'] = API_KEY;
 		
 		return call(options);
@@ -129,6 +153,14 @@ module.exports = {
 	ORDER_SIDE: {
 		BUY: 'BUY',
 		SELL: 'SELL'
+	},
+	ORDER_STATUS: {
+		NEW: 'NEW',
+		PARTIALLY_FILLED: 'PARTIALLY_FILLED',
+		FILLED: 'FILLED',
+		CANCELED: 'CANCELED',
+		REJECTED: 'REJECTED',
+		EXPIRED: 'EXPIRED'
 	},
 	TIME_IN_FORCE: {
 		GTC: 'GTC',
