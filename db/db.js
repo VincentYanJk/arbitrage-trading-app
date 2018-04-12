@@ -3,13 +3,7 @@ const ObjectId = require('mongodb').ObjectId;
 
 const config = require('../config/config.js');
 
-var database = 'binance';
-var Patch;
-var Transaction;
-var Ticker;
-var clientMongo;
-var db;
-var tradeDataCollection;
+let database = 'binance', Patch, Transaction, Ticker, clientMongo, db, tradeDataCollection, occasionCollection;
 
 mongodb.connect(config.DB_URL, (err, client) => {
     if (err)  {
@@ -22,6 +16,7 @@ mongodb.connect(config.DB_URL, (err, client) => {
     Transaction = db.collection('transaction');
     Ticker = db.collection('ticker');
     tradeDataCollection = db.collection('trade_data');
+    occasionCollection = db.collection('occasion');
 }); 
 
 const PushPatch = function(oData, sUnique) {
@@ -78,9 +73,8 @@ module.exports = {
     pushPath: PushPatch,
     pushTransaction: PushTransaction,
     close: CloseConnection,
-    updateTradeData: (tradeData) => {
-        return tradeDataCollection.updateOne({ _id: tradeData._id }, { $set: { data: tradeData.data }}, { upsert: true });
-    },
+    insertTradeOccasion: (occasion) => occasionCollection.insertOne(occasion),
+    updateTradeData: (tradeData) => tradeDataCollection.updateOne({ _id: tradeData._id }, { $set: { data: tradeData.data }}, { upsert: true }),
     getTradeData: () => tradeDataCollection.find({}).toArray(),
     generateObjectId: () => new ObjectId()
 };

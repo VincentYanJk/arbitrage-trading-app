@@ -5,6 +5,7 @@ const Decimal = require('decimal.js');
 const binance = require('./exchange/binance.js');
 const ws = require('./ws/ws.js');
 const transaction = require('./transaction.js');
+const db = require('./db/db.js');
 
 const USDT_SYMBOL = 'USDT';
 const BTC_SYMBOL = 'BTC';
@@ -124,6 +125,7 @@ const lookForTrade = (tradeData, tickers) => {
                 path.percentageProfit = tradeQty.sub(neededQty).div(neededQty).mul(100).toDecimalPlaces(2).toNumber();
                 path.currencyProfit = tradeQty.sub(neededQty).toNumber();
                 if (path.currencyProfit >= MIN_PROFIT) {
+                    db.insertTradeOccasion({ path: path, time: Date.now() });
                     profitableTrades.push(path);
                     console.log('[' + moment().format('DD.MM.YYYY HH:mm:ss') + ']', path[0].pair.pair, '-', path[1].pair.pair, '-', path[2].pair.pair, path.percentageProfit, '%', path.currencyProfit, tradeData.baseSymbol);
                     // console.log(path[0].pair.pair, path[0].neededQty, path[0].tradeQty, path[1].pair.pair, path[1].neededQty, path[1].tradeQty, path[2].pair.pair, path[2].neededQty, path[2].tradeQty);
@@ -134,8 +136,8 @@ const lookForTrade = (tradeData, tickers) => {
     if (profitableTrades.length > 0) {
         let mostProfitablePath = _.maxBy(profitableTrades, (trade) => trade.currencyProfit);
         console.log("MOST PROFITABLE TRADE:", mostProfitablePath.currencyProfit, mostProfitablePath.percentageProfit);
-        console.log(mostProfitablePath);
-        transaction.makeTransactions(mostProfitablePath);
+        // console.log(mostProfitablePath);
+        // transaction.makeTransactions(mostProfitablePath);
     }
     console.log(`[${tradeData.baseSymbol}] Found`, profitableTrades.length, `trades in`, Date.now() - time, 'ms');
 };
@@ -215,21 +217,30 @@ const calculateTradeDataForPath = (path, tickers, baseSymbol, baseSymbolQty) => 
     }
 
     if (path.status) {
+        currentSymbol = baseSymbol;
         tradeQty = new Decimal(path[0].neededQty);
         for (let i = 0; i < path.length; i++) {
             let pairInPath = path[i];
 
-            let pairNeededQty = new Decimal(pairInPath.neededQty), pairTradeQty = new Decimal(pairInPath.tradeQty);
+            let bid = new Decimal(pairInPath.bid), ask = new Decimal(pairInPath.ask), step = pairInPath.info.step, tick = pairInPath.info.tick, pairNeededQty = new Decimal(pairInPath.neededQty), pairTradeQty = new Decimal(pairInPath.tradeQty);
 
-            if (tradeQty.lt(pairNeededQty)) {
+            if (currentSymbol === pairInPath.info.base) {
+                neededQty = tradeQty.lt(pairNeededQty) ? tradeQty : pairNeededQty;
+                neededQty = neededQty.divToInt(step).mul(step);
 
+                tradeQty = neededQty.mul(bid).divToInt(tick).mul(tick);
+                currentSymbol = pairInPath.info.quote;
+            } else if (currentSymbol === pairInPath.info.quote) {
+                neededQty = pairTradeQty.mul(ask);
+                neededQty = tradeQty.lt(neededQty) ? tradeQty : neededQty;
+                neededQty = neededQty.divToInt(tick).mul(tick);
+
+                tradeQty = neededQty.div(ask).divToInt(step).mul(step);
+                currentSymbol = pairInPath.info.base;
             }
-
-            if (pairInPath.type === 'ask') {
-
-            } else if (pairInPath.type === 'bid') {
-
-            }
+            pairInPath.neededQty = neededQty.toNumber();
+            pairInPath.tradeQty = tradeQty.toNumber();
+            // console.log(pairInPath);
         }
     }
 };
